@@ -73,7 +73,7 @@ int wmain(int argc, wchar_t** argv)
 ## Example command line
 A programm called `cmdlineparse.exe` using the code above would display the following output based on the provided arguments:
 ```cmdlineparse.exe -foo bar -number 100 -someFloat 32.9374 -muli "Hello, Sailor!" /usr/bin/foo 42 --whatever true
-cmdlineparse "I'm a positional argument and will be ignored!"  -foo bar -number 100 -someFloat 32.9374 -muli "Hello, Sailor!" /usr/bin/foo 42 --whatever true
+cmdlineparse "I'm a positional argument and will be ignored!"  -foo bar -number 100 -someFloat 32.9374 -multi "Hello, Sailor!" /usr/bin/foo 42 --whatever true
 Option: foo
 Value 1: bar (String)
 Option: number
