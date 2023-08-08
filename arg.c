@@ -4,267 +4,270 @@
 #include <wchar.h>
 #include "arg.h"
 
-static size_t arg_stringToHash(const wchar_t* str)
+static ARGExpectedOption* argFindExpectedOption(wchar_t* name, ARGExpectedOption* options, int numOptions)
 {
-  size_t stringLen = wcslen((wchar_t*)str);
-  size_t hash = 0;
-
-  for(; *str; ++str)
+  for (int i = 0; i < numOptions; i++)
   {
-    hash += *str;
-    hash += (hash << 10);
-    hash ^= (hash >> 6);
-  }
-
-  hash += (hash << 3);
-  hash ^= (hash >> 11);
-  hash += (hash << 15);
-  hash ^= stringLen;
-
-  return hash;
-}
-
-static ARGValue arg_parseOptionValue(wchar_t* value)
-{
-  ARGValue optionValue;
-
-  if (wcscmp(value, L"true") == 0 || wcscmp(value, L"false") == 0)
-  {
-    optionValue.type = BOOL;
-    optionValue.value.boolValue = (wcscmp(value, L"true") == 0);
-  }
-  else
-  {
-    wchar_t* endptr;
-    int intValue = wcstol(value, &endptr, 10);
-    if (*endptr == '\0')
+    if (wcscmp(name, options[i].name) == 0)
     {
-      optionValue.type = INTEGER;
-      optionValue.value.intValue = intValue;
-    }
-    else
-    {
-      float floatValue = wcstof(value, &endptr);
-      if (*endptr == '\0')
-      {
-        optionValue.type = FLOAT;
-        optionValue.value.floatValue = floatValue;
-      } else
-      {
-        optionValue.type = STRING;
-        optionValue.value.stringValue = _wcsdup(value);
-      }
+      return &options[i];
     }
   }
 
-  return optionValue;
+  return (ARGExpectedOption*) 0;
 }
 
-static ARGOption arg_parseOption(wchar_t* name, wchar_t** values, int numValues)
+static wchar_t* argGetTypeName(ARGType type)
 {
-  ARGOption cmdOption;
-  cmdOption.name = name;
-  cmdOption.numValues = numValues;
-  cmdOption.hash = arg_stringToHash(name);
-
-  if (values == NULL)
+  switch (type)
   {
-    cmdOption.numValues = 0;
-    cmdOption.values = NULL;
-    return cmdOption;
-  }
-
-  cmdOption.values = (ARGValue*)malloc(numValues * sizeof(ARGValue));
-
-  for (int i = 0; i < numValues; i++)
-  {
-    cmdOption.values[i] = arg_parseOptionValue(values[i]);
-  }
-
-  return cmdOption;
-}
-
-ARGOption* arg_findOption(ARGCmdLine* cmdLine, wchar_t* name, size_t hash)
-{
-  for (int i = 0; i < cmdLine->numOptions; i++)
-  {
-    ARGOption* option = &cmdLine->options[i];
-    if (option->hash == hash && wcscmp(option->name, name) == 0)
-      return option;
-  }
-
-  return (ARGOption*) 0;
-}
-
-bool arg_isExpectedOption(ARGOption* option, ARGExpectedOption* expectedOptions, unsigned int numExpectedOptions)
-{
-  for (int i = 0; i < numExpectedOptions; i++)
-  {
-    ARGExpectedOption* expected = &expectedOptions[i];
-    if (option->hash == expected->hash && wcscmp(option->name, expected->name + 1) == 0) // +1 to skip the dash
-      return true;
-  }
-
-  return false;
-}
-
-void arg_showUsage(wchar_t* programName, ARGExpectedOption* expectedOptions, unsigned int numExpectedOptions)
-{
-  fwprintf(stdout, L"Usage\n\n  %s ", programName);
-
-  for( int i = 0; i < numExpectedOptions; i++)
-  {
-    ARGExpectedOption* option = &expectedOptions[i];
-    wchar_t* fmt = option->required ? L"%s %s " : L"[%s %s] ";
-    fwprintf(stdout, fmt, option->name, option->numValuesMin > 0 ? option->valueName : L"");
-  }
-
-  fwprintf(stdout, L"\n\n");
-  for(int i = 0; i < numExpectedOptions; i++)
-  {
-    ARGExpectedOption* option = &expectedOptions[i];
-    int numSpaces = -30 + wcslen(option->name); // + wcslen(option->valueName) + 40;
-    wprintf(L"  %s %*s = %s\n", option->name, numSpaces, option->valueName, option->help);
+    case INTEGER: return L"INTEGER"; break;
+    case FLOAT: return L"FLOAT"; break;
+    case BOOL: return L"BOOL"; break;
+    case STRING: return L"STRING"; break;
+    case ANY: return L"ANY"; break;
+    default: return L"UNKNOWN"; break;
   }
 }
 
-ARGCmdLine* argCmdLineParse(int argc, wchar_t** argv)
+static bool argParseValue(ARGCmdLine* cmdLine, ARGOption* option, ARGExpectedOption* expected)
 {
-  ARGCmdLine* cmdLine = (ARGCmdLine*) malloc(sizeof(ARGCmdLine));
-  cmdLine->numOptions = 0;
-  cmdLine->options = (ARGOption*) malloc((argc - 1)* sizeof(ARGOption));
-  cmdLine->programName = argv[0];
+  ARGValue value;
+  wchar_t *endptr;
+  wchar_t *valueString = cmdLine->argv[cmdLine->argi];
+  ARGType type;
+  bool parsed = false;
 
-  // First loop to count the number of values for each option
-  for (int i = 1; i < argc; i++)
+  // check for INTGEGER
+  int number = wcstol(valueString, &endptr, 10);
+  if (valueString != endptr && *endptr == L'\0')
   {
-    if (argv[i][0] == '-')
+    value.intValue = number;
+    type = INTEGER;
+    parsed = true;
+  }
+
+  // check for FLOAT
+  if (! parsed)
+  {
+    double number = wcstod(valueString, &endptr);
+    if (valueString != endptr && *endptr == L'\0')
     {
-      wchar_t* option = argv[i] + 1;
-      int numValues = 0;
-      for (int j = i + 1; j < argc && argv[j][0] != '-'; j++)
-      {
-        numValues++;
-      }
-      ARGOption cmdOption = arg_parseOption(option, &argv[i + 1], numValues);
-      cmdLine->options[cmdLine->numOptions++] = cmdOption;
-      i += numValues; // Skip the next arguments, as they were processed as values for the current option
+      value.floatValue = number;
+      type = FLOAT;
+      parsed = true;
     }
   }
+
+  // chek for BOOL
+  if (! parsed)
+  {
+    if (wcscmp(valueString, L"true") == 0)
+    {
+      type = BOOL;
+      value.boolValue = true;
+      parsed = true;
+    }
+    else if (wcscmp(valueString, L"false") == 0)
+    {
+      type = BOOL;
+      value.boolValue = false;
+      parsed = true;
+    }
+  }
+
+  // check for STRING  (fallback case)
+  if (! parsed)
+  {
+    value.stringValue = valueString;
+    type = STRING;
+    parsed = true;
+  }
+
+  // check for type mismatch
+  if ((expected->type & type) != type)
+  {
+    fwprintf(stderr, L"Option '%s' expects %s values but %s was passed",
+        option->name,
+        argGetTypeName(expected->type),
+        argGetTypeName(type));
+
+    cmdLine->valid = false;
+    return false;
+  }
+
+  int index = option->numValues++;
+  option->values = (ARGValue*) realloc(option->values, sizeof(ARGValue) * option->numValues);
+  option->values[index] = value;
+  cmdLine->argi++;
+  return true;
+}
+
+static void argParseOption(ARGCmdLine* cmdLine, ARGExpectedOption* expectedOptions, int numExpectedOptions)
+{
+  if (cmdLine->argi >= cmdLine->argc)
+    return;
+
+  wchar_t* optionString = cmdLine->argv[cmdLine->argi];
+  ARGExpectedOption* expected = argFindExpectedOption(optionString, expectedOptions, numExpectedOptions);
+
+  if (! expected)
+  {
+    if (optionString[0] == '-')
+    {
+      fwprintf(stderr, L"Unknown option '%s'\n", optionString);
+      cmdLine->valid = false;
+      return;
+    }
+
+    // we force the end of the parsing. 
+    cmdLine->reminderArgi = cmdLine->argi;
+    cmdLine->argi = cmdLine->argc;
+    return;
+  }
+
+  int optionIndex = cmdLine->numOptions++;
+  cmdLine->options = (ARGOption*) realloc(cmdLine->options, sizeof(ARGOption) * cmdLine->numOptions);
+  ARGOption* option = &cmdLine->options[optionIndex];
+  option->name = optionString;
+  option->numValues = 0;
+  option->values = 0;
+  option->hash = 0;
+  option->type = expected->type;
+  option->layer = expected->layer;
+  cmdLine->argi++;
+
+  // minimum argument count
+  while (expected->numValuesMin < option->numValues)
+  {
+    if (! argParseValue(cmdLine, option, expected))
+    {
+      fwprintf(stderr, L"Option '%s' requries at least %d arguments.", option->name, expected->numValuesMin);
+      return;
+    }
+  }
+
+  // maximum argument count
+  if (expected->numValuesMin != expected->numValuesMax)
+  {
+    while (cmdLine->argi <= (cmdLine->argc - 1) && cmdLine->argv[cmdLine->argi][0] != '-')
+    {
+      // if there is a maximum value limit, stop parsing values whe whe reach this limit
+      if (expected->numValuesMax > 0 && option->numValues == expected->numValuesMax)
+        break;
+
+      if (! argParseValue(cmdLine, option, expected))
+        break;
+    }
+  }
+
+  // if the option is set not to have values, we might need to initialize it's value to a default
+  if (option->numValues == 0)
+  {
+    option->numValues = 1;
+    option->values = (ARGValue*) malloc(sizeof(ARGValue));
+    if(option->type == INTEGER)
+      option->values[0].intValue = 0;
+    if(option->type == FLOAT)
+      option->values[0].floatValue = 0.0f;
+    if(option->type == BOOL)
+      option->values[0].boolValue = true;
+    if(option->type == STRING)
+      option->values[0].stringValue = L"";
+  }
+
+  cmdLine->reminderArgi = cmdLine->argi;
+
+  return;
+}
+
+ARGCmdLine argParseCmdLine(int argc, wchar_t **argv, ARGExpectedOption* expectedOptions, int numExpectedOptions)
+{
+  ARGCmdLine cmdLine  = { 0 };
+  cmdLine.valid       = true;
+  cmdLine.numOptions  = 0;
+  cmdLine.reminderArgi = argc;
+  cmdLine.argc = argc;
+  cmdLine.argv = argv;
+  cmdLine.argi = 1; // we skip program name
+
+  do
+  {
+    argParseOption(&cmdLine, expectedOptions, numExpectedOptions);
+  } while (cmdLine.argi < cmdLine.argc && cmdLine.valid);
+
+  // TODO(marcio): validate if mandatory targets were provided
+  // TODO(marcio): validate if used commands from conflicting layers
+
   return cmdLine;
 }
 
-void argCmdLineFree(ARGCmdLine* cmdLine)
+void argFreeCmdLine(ARGCmdLine *cmdLine)
 {
-  int numOptions = cmdLine->numOptions;
-  for (int i = 0; i < numOptions; i++)
+  for (int i = 0; i < cmdLine->numOptions; i++)
   {
-    for (int j = 0; j < cmdLine->options[i].numValues; j++)
-    {
-      if (cmdLine->options[i].values[j].type == STRING)
-      {
-        free(cmdLine->options[i].values[j].value.stringValue);
-      }
-    }
+    int numValues = cmdLine->options[i].numValues;
     free(cmdLine->options[i].values);
   }
 
   free(cmdLine->options);
-  free(cmdLine);
 }
 
-bool argValidate(ARGCmdLine* cmdLine, ARGExpectedOption* expectedOptions, unsigned int numExpectedOptions)
+void argShowUsage(wchar_t* programName, ARGExpectedOption* expectedOptions, unsigned int numExpectedOptions)
 {
-  bool result = true;
+  fwprintf(stdout, L"Usage\n\n");
 
-  // compute hashes for each expected option
-  for (int i = 0; i < numExpectedOptions; i++)
+  // Options if any
+  for (int layer = 0; layer < LAYER_MAX; layer++)
   {
-    ARGExpectedOption* expected = &expectedOptions[i];
-    expected->hash = arg_stringToHash(expected->name + 1); // +1 to skip the dash
-  }
-
-
-  // Handle the default HELP cmd line
-  if (cmdLine->numOptions == 1 && cmdLine->options[0].numValues == 0)
-  {
-    for (int i = 0; i < numExpectedOptions; i++)
+    bool printedProgramName = false;
+    for(int i = 0; i < numExpectedOptions; i++)
     {
-      ARGExpectedOption* helpOption = &expectedOptions[i];
-      if (helpOption->type == HELP
-          && helpOption->numValuesMax == 0
-          && helpOption->numValuesMin == 0
-          && helpOption->hash == cmdLine->options[0].hash
-          && wcscmp(helpOption->name, cmdLine->options[i].name) == 0)
-      {
-        arg_showUsage(cmdLine->programName, expectedOptions, numExpectedOptions);
-        return true;
-      }
-    }
-  }
+      ARGExpectedOption* option = &expectedOptions[i];
 
-  // check if command line matches the expected arguments
-  for (int i = 0; i < numExpectedOptions; i++)
-  {
-    ARGExpectedOption* expected = &expectedOptions[i];
-    ARGOption* option = arg_findOption(cmdLine, expected->name + 1, expected->hash); // +1 to skip the dash
-
-    // validate required options
-    if (option == 0)
-    {
-      if (expected->required)
-      {
-        fwprintf(stderr, L"Option '%s' is required but was not specified.\n", expected->name);
-        result = false;
+      // is this option in this layer ?
+      if ((option->layer & (1 << layer)) == 0)
         continue;
-      }
-    }
-    else  // validate number of values
-    {
-      // exact amount of values
-      if (expected->numValuesMin == expected->numValuesMax)
+
+      if (option->type == REMINDER)
+        continue;
+
+      if (!printedProgramName)
       {
-        if (expected->numValuesMin <= 0 && option->numValues > 0)
-        {
-          fwprintf(stderr, L"Option '%s' does not expect values.\n", expected->name);
-          result = false;
-        }
-      }
-      else
-      {
-        if (expected->numValuesMin > option->numValues || expected->numValuesMax < option->numValues)
-        {
-          fwprintf(stderr, L"Option '%s' expects from %d to %d values but %d was provided.\n", expected->name,
-              expected->numValuesMin, expected->numValuesMax, option->numValues);
-          result = false;
-        }
+        printedProgramName = true;
+        fwprintf(stdout, L"  %s ", programName);
       }
 
-      // validate type of values
-      for (int j = 0 ; j < option->numValues; j++)
-      {
-        ARGValue* value = &option->values[j];
-        if ((value->type & expected->type) != value->type)
-        {
-          fwprintf(stderr, L"Option '%s' received incompatible value type.\n", expected->name);
-          result = false;
-          break;
-        }
-      }
+      wchar_t* fmt = option->required ? L"%s %s " : L"[%s %s] ";
+      fwprintf(stdout, fmt, option->name, option->numValuesMin > 0 ? option->valueName : L"\b");
     }
+
+    // Reminder positional arguments if any
+    for( int i = 0; i < numExpectedOptions; i++)
+    {
+      ARGExpectedOption* option = &expectedOptions[i];
+
+      // is this option in this layer ?
+      if ((option->layer & (1 << layer)) == 0)
+        continue;
+
+      if (option->type != REMINDER)
+        continue;
+
+      wchar_t* fmt = option->required ? L"<%s>" : L"[<%s>] ";
+      fwprintf(stdout, fmt, option->name);
+    }
+
+    if (printedProgramName)
+      fwprintf(stdout, L"\n");
   }
 
-  // check for unknown options
-  for (int i = 0; i < cmdLine->numOptions; i++)
+  fwprintf(stdout, L"\n\nOptions\n");
+  for(int i = 0; i < numExpectedOptions; i++)
   {
-    ARGOption* option = &cmdLine->options[i];
-    if (! arg_isExpectedOption(option, expectedOptions, numExpectedOptions))
-    {
-      fwprintf(stderr, L"Unknown option '-%s'\n", option->name);
-      result = false;
-    }
+    ARGExpectedOption* option = &expectedOptions[i];
+    int numSpaces = -30 + wcslen(option->name);
+    wprintf(L"  %s %*s = %s\n", option->name, numSpaces, option->valueName, option->help);
   }
-
-  return result;
 }
 

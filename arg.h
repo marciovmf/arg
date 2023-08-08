@@ -4,59 +4,77 @@
 #include <stdbool.h>
 #include <wchar.h>
 
-typedef enum 
+typedef enum
 {
-  INTEGER = 1,
-  FLOAT   = 1 << 1,
-  BOOL    = 1 << 2,
-  STRING  = 1 << 3,
-  ANY     = INTEGER | FLOAT | BOOL | STRING,
-  HELP
+  INTEGER   = 1,
+  FLOAT     = 1 << 1,
+  BOOL      = 1 << 2,
+  STRING    = 1 << 3,
+  ANY       = INTEGER | FLOAT | BOOL | STRING,
+  REMINDER,
 } ARGType;
 
+typedef enum
+{
+  LAYER_0 = 1 << 0,
+  LAYER_1 = 1 << 1,
+  LAYER_2 = 1 << 2,
+  LAYER_3 = 1 << 3,
+  LAYER_4 = 1 << 4,
+  LAYER_5 = 1 << 5,
+  LAYER_6 = 1 << 6,
+  LAYER_7 = 1 << 7,
+  LAYER_MAX = 8
+} ARGLayer;
 
 typedef struct
 {
   union
   {
-    int intValue;
-    float floatValue;
-    wchar_t* stringValue;
-    bool boolValue;
-  } value;
+    int       intValue;
+    float     floatValue;
+    wchar_t*  stringValue;
+    bool      boolValue;
+  };
 
-  ARGType type;
 } ARGValue;
 
 typedef struct
 {
-  wchar_t* name;
+  wchar_t*  name;
+  size_t    hash;
+  int       numValues;
+  ARGType   type;
   ARGValue* values;
-  int numValues;
-  size_t hash;
+  ARGLayer  layer;
 } ARGOption;
 
 typedef struct
 {
-  int numOptions;
-  ARGOption* options;
-  wchar_t* programName;
+  int         numOptions;
+  bool        valid;
+  ARGOption*  options;
+  int         reminderArgi;
+  int         argi;
+  int         argc;
+  wchar_t**   argv;
 } ARGCmdLine;
 
 typedef struct
 {
-  wchar_t* name;
-  wchar_t* valueName;
-  wchar_t* help;
-  short numValuesMin; // zero or negative means no arguments
-  short numValuesMax; // zero or negative means no maximum limit
-  ARGType type;
-  bool required;
-  size_t hash;
+  wchar_t*  name;
+  wchar_t*  valueName;
+  wchar_t*  help;
+  ARGType   type;
+  short     numValuesMin; // zero or negative means no arguments
+  short     numValuesMax; // zero or negative means no maximum limit
+  bool      required;
+  ARGLayer  layer;
 } ARGExpectedOption;
 
-ARGCmdLine* argCmdLineParse(int argc, wchar_t** argv);
-void argCmdLineFree(ARGCmdLine* cmdLine);
-bool argValidate(ARGCmdLine* cmdLine, ARGExpectedOption* expectedArgs, unsigned int numExpectedArgs);
+
+ARGCmdLine argParseCmdLine(int argc, wchar_t **argv, ARGExpectedOption* expectedOptions, int numExpectedOptions);
+void argShowUsage(wchar_t* programName, ARGExpectedOption* expectedOptions, unsigned int numExpectedOptions);
+void argFreeCmdLine(ARGCmdLine *cmdLine);
 
 #endif  // ARG_H
