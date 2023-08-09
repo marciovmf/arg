@@ -8,47 +8,73 @@
 
 int wmain(int argc, wchar_t **argv)
 {
-  ARGExpectedOption optionA = { L"-a", L"number", L"Specify zero or one integer value", INTEGER, 1, 1, true, ARG_LAYER_0, ARG_ONCE };
-  ARGExpectedOption optionB = { L"-b", L"", L"Specify a flag with no arguments", BOOL, 0, 0, true, ARG_LAYER_0, ARG_ONCE };
-  ARGExpectedOption optionD = { L"-f", L"float-number", L"Specify a float value", FLOAT, 1, 1, false, ARG_LAYER_0, ARG_ONCE };
-  ARGExpectedOption optionC = { L"-c", L"param", L"Specify a list of one or more strings",  STRING, 1, -1, false, ARG_LAYER_0, ARG_MULTIPLE};
-  ARGExpectedOption optionHelp = { L"-h", L"param", L"Displays this help.", STRING, 0, 0, true, ARG_LAYER_1, ARG_ONCE };
-  ARGExpectedOption optionReminder0 = { L"Input files", L"param", L"A list of files to process", REMINDER, 0, 0, false, ARG_LAYER_0, ARG_ONCE};
+  enum
+  {
+    OPTION_HELP   = 0,
+    OPTION_SUM    = 1,
+    OPTION_DEBUG  = 3,
+  };
 
-  ARGExpectedOption options[] = { optionA, optionB, optionC, optionD, optionHelp, optionReminder0};
+  ARGExpectedOption options[] =
+  {
+    { OPTION_HELP,  L"-h", L"", L"Displays this help", ARG_TYPE_STRING, 0, 0, true, ARG_LAYER_0, ARG_FLAG_ONCE},
+    { OPTION_SUM, L"-sum", L"n", L"Specify values to sum", ARG_TYPE_INTEGER, 2, -1, true, ARG_LAYER_1, ARG_FLAG_MULTIPLE},
+    { OPTION_DEBUG,  L"-debug", L"", L"Display debug information about parsed options", ARG_TYPE_BOOL, 0, 0, false, ARG_LAYER_0 | ARG_LAYER_1, ARG_FLAG_ONCE},
+  };
+
   int numOptions = sizeof(options) / sizeof(options[0]);
   ARGCmdLine cmdLine = argParseCmdLine(argc, argv, options, numOptions);
 
-  if (cmdLine.valid)
+  if (!cmdLine.valid)
+    return 1;
+
+  // Help ?
+  ARGOption* option = argGetOptionById(&cmdLine, OPTION_HELP);
+  if (option && option->values[0].boolValue)
   {
-    if (cmdLine.numOptions > 0 && wcscmp(cmdLine.options[0].name, L"-h") == 0)
+    argShowUsage(L"cmdlineparse", options, numOptions);
+  }
+
+  // SUM ?
+  option = argGetOptionById(&cmdLine, OPTION_SUM);
+  if (option)
+  {
+    int result = 0;
+    for (int i = 0; i < option->numValues; i++)
     {
-      argShowUsage(L"cmdlineparse", options, numOptions);
-      return 0;
+      result += option->values[i].intValue;
     }
 
+    printf("The sum is %d\n", result);
+  }
+
+  // debug ?
+  option = argGetOptionById(&cmdLine, OPTION_DEBUG);
+  if (option && option->values[0].boolValue)
+  {
+    printf("\n------------------ CMDLINE DEBUG INFO ------------------------\n");
     for (int i = 0; i < cmdLine.numOptions; i++)
     {
       ARGOption* option = &cmdLine.options[i];
 
       wprintf(L"%s (%s) = ", option->name,
-          option->type == INTEGER ? L"INTEGER" :
-          option->type == BOOL    ? L"BOOL" :
-          option->type == FLOAT   ? L"FLOAT" :
+          option->type == ARG_TYPE_INTEGER ? L"INTEGER" :
+          option->type == ARG_TYPE_BOOL    ? L"BOOL" :
+          option->type == ARG_TYPE_FLOAT   ? L"FLOAT" :
           L"STRING");
 
       for (int j = 0; j < option->numValues; j++)
       {
         wchar_t* separator = j == option->numValues - 1 ? L"\n" : L",";
-        if (cmdLine.options[i].type == FLOAT)
+        if (cmdLine.options[i].type == ARG_TYPE_FLOAT)
         {
           wprintf(L"%f%s", option->values[j].floatValue, separator);
         }
-        else if (cmdLine.options[i].type == INTEGER)
+        else if (cmdLine.options[i].type == ARG_TYPE_INTEGER)
         {
           wprintf(L"%d%s", option->values[j].intValue, separator);
         }
-        else if (cmdLine.options[i].type == BOOL)
+        else if (cmdLine.options[i].type == ARG_TYPE_BOOL)
         {
           wprintf(L"%s%s", option->values[j].boolValue ? L"true" : L"false", separator);
         }
@@ -64,10 +90,6 @@ int wmain(int argc, wchar_t **argv)
     {
       wprintf(L"Reminder %d = %s\n",i, reminders[i]);
     }
-  }
-  else
-  {
-    printf("invalid!\n");
   }
 
   argFreeCmdLine(&cmdLine);

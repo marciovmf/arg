@@ -6,18 +6,18 @@
 
 typedef enum
 {
-  INTEGER   = 1,
-  FLOAT     = 1 << 1,
-  BOOL      = 1 << 2,
-  STRING    = 1 << 3,
-  ANY       = INTEGER | FLOAT | BOOL | STRING,
-  REMINDER,
+  ARG_TYPE_INTEGER   = 1,
+  ARG_TYPE_FLOAT     = 1 << 1,
+  ARG_TYPE_BOOL      = 1 << 2,
+  ARG_TYPE_STRING    = 1 << 3,
+  ARG_TYPE_ANY       = ARG_TYPE_INTEGER | ARG_TYPE_FLOAT | ARG_TYPE_BOOL | ARG_TYPE_STRING,
+  ARG_TYPE_REMINDER,
 } ARGType;
 
 typedef enum
 {
-  ARG_ONCE       = 0,
-  ARG_MULTIPLE   = 1,
+  ARG_FLAG_ONCE       = 0,
+  ARG_FLAG_MULTIPLE   = 1,
 } ARGFlag;
 
 typedef enum
@@ -48,10 +48,11 @@ typedef struct
 typedef struct
 {
   wchar_t*  name;
+  ARGValue* values;
   int       numValues;
   ARGType   type;
-  ARGValue* values;
   ARGLayer  layer;
+  int       id;
 } ARGOption;
 
 typedef struct
@@ -64,10 +65,13 @@ typedef struct
   int         argc;
   wchar_t**   argv;
   int         numReminders;
+  int         numRequiredOptions;
+  ARGLayer    baseLayer;
 } ARGCmdLine;
 
 typedef struct
 {
+  int       id;           // a numeric ID to identify the option
   wchar_t*  name;
   wchar_t*  valueName;
   wchar_t*  help;
@@ -82,7 +86,8 @@ typedef struct
 
 ARGCmdLine argParseCmdLine(int argc, wchar_t **argv, ARGExpectedOption* expectedOptions, int numExpectedOptions);
 void argShowUsage(wchar_t* programName, ARGExpectedOption* expectedOptions, unsigned int numExpectedOptions);
-ARGOption* argGetOption(ARGCmdLine* cmdLine, wchar_t* name);
+ARGOption* argGetOptionByName(ARGCmdLine* cmdLine, wchar_t* name);
+ARGOption* argGetOptionById(ARGCmdLine* cmdLine, int id);
 void argFreeCmdLine(ARGCmdLine *cmdLine);
 
 #endif  // ARG_H
