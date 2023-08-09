@@ -230,7 +230,7 @@ ARGCmdLine argParseCmdLine(int argc, wchar_t **argv, ARGExpectedOption* expected
   cmdLine.reminderArgi  = argc;
   cmdLine.numReminders  = 0;
 
-  ARGLayer usedLayer = -1;
+  ARGLayer usedLayer = 0;
 
   do
   {
@@ -243,22 +243,30 @@ ARGCmdLine argParseCmdLine(int argc, wchar_t **argv, ARGExpectedOption* expected
       ARGOption* lastParsedOption = &cmdLine.options[cmdLine.numOptions - 1];
       ARGLayer cmdLayer = lastParsedOption->layer;
 
-      if (usedLayer == -1)
+      if (!usedLayer)
       {
         usedLayer = cmdLayer;
       }
       else
       {
-        if ((usedLayer & cmdLayer) == 0)
+        if ((cmdLine.numRequiredOptions > 0 && (cmdLine.baseLayer & cmdLayer) == 0) || (usedLayer & cmdLayer) == 0)
         {
           for (int j = 0; j < cmdLine.numOptions - 1; j++)
-            fwprintf(stderr, L"Option '%s' can not be used along with '%s'\n",
-                lastParsedOption->name, cmdLine.options[j].name);
+          {
+            if (cmdLine.options[j].layer <= usedLayer)
+            {
+              fwprintf(stderr, L"Option '%s' can not be used along with '%s'\n",
+                  lastParsedOption->name, cmdLine.options[j].name);
+            }
+          }
 
           cmdLine.valid = false;
           break;
         }
-        usedLayer |= cmdLayer;
+
+        if (cmdLayer < usedLayer)
+          usedLayer = cmdLayer;
+
       }
     }
   } while (cmdLine.argi < cmdLine.argc && cmdLine.valid);
