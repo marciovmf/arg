@@ -16,15 +16,21 @@ typedef enum
 
 typedef enum
 {
-  LAYER_0 = 1 << 0,
-  LAYER_1 = 1 << 1,
-  LAYER_2 = 1 << 2,
-  LAYER_3 = 1 << 3,
-  LAYER_4 = 1 << 4,
-  LAYER_5 = 1 << 5,
-  LAYER_6 = 1 << 6,
-  LAYER_7 = 1 << 7,
-  LAYER_MAX = 8
+  ARG_ONCE       = 0,
+  ARG_MULTIPLE   = 1,
+} ARGFlag;
+
+typedef enum
+{
+  ARG_LAYER_0 = 1 << 0,
+  ARG_LAYER_1 = 1 << 1,
+  ARG_LAYER_2 = 1 << 2,
+  ARG_LAYER_3 = 1 << 3,
+  ARG_LAYER_4 = 1 << 4,
+  ARG_LAYER_5 = 1 << 5,
+  ARG_LAYER_6 = 1 << 6,
+  ARG_LAYER_7 = 1 << 7,
+  ARG_LAYER_MAX = 8
 } ARGLayer;
 
 typedef struct
@@ -42,7 +48,6 @@ typedef struct
 typedef struct
 {
   wchar_t*  name;
-  size_t    hash;
   int       numValues;
   ARGType   type;
   ARGValue* values;
@@ -58,6 +63,7 @@ typedef struct
   int         argi;
   int         argc;
   wchar_t**   argv;
+  int         numReminders;
 } ARGCmdLine;
 
 typedef struct
@@ -70,11 +76,13 @@ typedef struct
   short     numValuesMax; // zero or negative means no maximum limit
   bool      required;
   ARGLayer  layer;
+  ARGFlag   flag;
 } ARGExpectedOption;
 
 
 ARGCmdLine argParseCmdLine(int argc, wchar_t **argv, ARGExpectedOption* expectedOptions, int numExpectedOptions);
 void argShowUsage(wchar_t* programName, ARGExpectedOption* expectedOptions, unsigned int numExpectedOptions);
+ARGOption* argGetOption(ARGCmdLine* cmdLine, wchar_t* name);
 void argFreeCmdLine(ARGCmdLine *cmdLine);
 
 #endif  // ARG_H

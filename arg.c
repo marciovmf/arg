@@ -4,6 +4,8 @@
 #include <wchar.h>
 #include "arg.h"
 
+ARGOption* argGetOption(ARGCmdLine* cmdLine, wchar_t* name);
+
 static ARGExpectedOption* argFindExpectedOption(wchar_t* name, ARGExpectedOption* options, int numOptions)
 {
   for (int i = 0; i < numOptions; i++)
@@ -125,19 +127,34 @@ static void argParseOption(ARGCmdLine* cmdLine, ARGExpectedOption* expectedOptio
 
     // we force the end of the parsing. 
     cmdLine->reminderArgi = cmdLine->argi;
+    cmdLine->numReminders = cmdLine->argc - cmdLine->argi;
     cmdLine->argi = cmdLine->argc;
     return;
   }
 
-  int optionIndex = cmdLine->numOptions++;
-  cmdLine->options = (ARGOption*) realloc(cmdLine->options, sizeof(ARGOption) * cmdLine->numOptions);
-  ARGOption* option = &cmdLine->options[optionIndex];
-  option->name = optionString;
-  option->numValues = 0;
-  option->values = 0;
-  option->hash = 0;
-  option->type = expected->type;
-  option->layer = expected->layer;
+  // Validate flags
+  ARGOption* option = argGetOption(cmdLine, optionString);
+  if (option)
+  {
+    if (expected->flag == ARG_ONCE)
+    {
+      fwprintf(stderr, L"Option '%s' can't be specified multiple times.\n", optionString);
+      cmdLine->valid = false;
+      return;
+    }
+  }
+  else
+  {
+    int optionIndex = cmdLine->numOptions++;
+    cmdLine->options = (ARGOption*) realloc(cmdLine->options, sizeof(ARGOption) * cmdLine->numOptions);
+    option = &cmdLine->options[optionIndex];
+    option->name = optionString;
+    option->numValues = 0;
+    option->values = 0;
+    option->type = expected->type;
+    option->layer = expected->layer;
+  }
+
   cmdLine->argi++;
 
   // minimum argument count
@@ -188,13 +205,14 @@ static void argParseOption(ARGCmdLine* cmdLine, ARGExpectedOption* expectedOptio
 
 ARGCmdLine argParseCmdLine(int argc, wchar_t **argv, ARGExpectedOption* expectedOptions, int numExpectedOptions)
 {
-  ARGCmdLine cmdLine  = { 0 };
-  cmdLine.valid       = true;
-  cmdLine.numOptions  = 0;
-  cmdLine.reminderArgi = argc;
-  cmdLine.argc = argc;
-  cmdLine.argv = argv;
-  cmdLine.argi = 1; // we skip program name
+  ARGCmdLine cmdLine    = { 0 };
+  cmdLine.valid         = true;
+  cmdLine.numOptions    = 0;
+  cmdLine.argc          = argc;
+  cmdLine.argv          = argv;
+  cmdLine.argi          = 1;      // we skip program name
+  cmdLine.reminderArgi  = argc;
+
   ARGLayer usedLayer = -1;
 
   do
@@ -202,10 +220,11 @@ ARGCmdLine argParseCmdLine(int argc, wchar_t **argv, ARGExpectedOption* expected
     // Parse the option and it's arguments
     argParseOption(&cmdLine, expectedOptions, numExpectedOptions);
 
-    // check if the layer of the last option conflicts with previous layers
+    // check if the last parsed option layer conflicts with previous options layers
     if (cmdLine.numOptions > 0 && cmdLine.valid)
     {
-      ARGLayer cmdLayer = cmdLine.options[cmdLine.numOptions - 1].layer;
+      ARGOption* lastParsedOption = &cmdLine.options[cmdLine.numOptions - 1];
+      ARGLayer cmdLayer = lastParsedOption->layer;
       if (usedLayer == -1)
         usedLayer = cmdLayer;
       else
@@ -214,7 +233,7 @@ ARGCmdLine argParseCmdLine(int argc, wchar_t **argv, ARGExpectedOption* expected
         {
           for (int j = 0; j < cmdLine.numOptions - 1; j++)
             fwprintf(stderr, L"Option '%s' can not be used along with '%s'\n",
-                cmdLine.options[cmdLine.numOptions - 1].name, cmdLine.options[j].name);
+                lastParsedOption->name, cmdLine.options[j].name);
 
           cmdLine.valid = false;
           break;
@@ -222,49 +241,53 @@ ARGCmdLine argParseCmdLine(int argc, wchar_t **argv, ARGExpectedOption* expected
         usedLayer |= cmdLayer;
       }
     }
+  } while (cmdLine.argi < cmdLine.argc && cmdLine.valid);
 
-    // check for missing required options for the layer used
-    if (cmdLine.valid && cmdLine.numOptions > 0)
+  // check for missing required options for the layer used
+  if (cmdLine.valid && cmdLine.numOptions > 0)
+  {
+    for (int i = 0; i < cmdLine.numOptions; i++)
     {
-      for (int i = 0; i < numExpectedOptions; i++)
+      if (expectedOptions[i].required)
       {
-        if (expectedOptions[i].required)
+        if ((expectedOptions[i].layer & usedLayer) != expectedOptions[i].layer)
+          continue;
+
+        bool found = false;
+        for (int j = 0; j < cmdLine.numOptions; j++)
         {
-          if ((expectedOptions[i].layer & usedLayer) != expectedOptions[i].layer)
-            continue;
-
-          bool found = false;
-          for (int j = 0; j < cmdLine.numOptions; j++)
+          if (wcscmp(expectedOptions[i].name, cmdLine.options[j].name) == 0)
           {
-            if (wcscmp(expectedOptions[i].name, cmdLine.options[j].name) == 0)
-            {
-              found = true;
-              break;
-            }
-          }
-
-          if (!found)
-          {
-            fwprintf(stderr, L"Option '%s' is required but was not provided.\n", expectedOptions[i].name);
+            found = true;
+            break;
           }
         }
-      }
-    }
 
-  } while (cmdLine.argi < cmdLine.argc && cmdLine.valid);
+        if (! found)
+        {
+          fwprintf(stderr, L"Option '%s' is required but was not provided.\n", expectedOptions[i].name);
+          cmdLine.valid = false;
+          break;
+        }
+      }
+
+    }
+  }
+
 
   return cmdLine;
 }
 
-void argFreeCmdLine(ARGCmdLine *cmdLine)
+ARGOption* argGetOption(ARGCmdLine* cmdLine, wchar_t* name)
 {
   for (int i = 0; i < cmdLine->numOptions; i++)
   {
-    int numValues = cmdLine->options[i].numValues;
-    free(cmdLine->options[i].values);
+    if (wcscmp(cmdLine->options[i].name, name) == 0)
+    {
+      return &cmdLine->options[i];
+    }
   }
-
-  free(cmdLine->options);
+  return 0;
 }
 
 void argShowUsage(wchar_t* programName, ARGExpectedOption* expectedOptions, unsigned int numExpectedOptions)
@@ -272,7 +295,7 @@ void argShowUsage(wchar_t* programName, ARGExpectedOption* expectedOptions, unsi
   fwprintf(stdout, L"Usage\n\n");
 
   // Options if any
-  for (int layer = 0; layer < LAYER_MAX; layer++)
+  for (int layer = 0; layer < ARG_LAYER_MAX; layer++)
   {
     bool printedProgramName = false;
     for(int i = 0; i < numExpectedOptions; i++)
@@ -297,15 +320,15 @@ void argShowUsage(wchar_t* programName, ARGExpectedOption* expectedOptions, unsi
     }
 
     // Reminder positional arguments if any
-    for( int i = 0; i < numExpectedOptions; i++)
+    for (int i = 0; i < numExpectedOptions; i++)
     {
       ARGExpectedOption* option = &expectedOptions[i];
 
-      // is this option in this layer ?
-      if ((option->layer & (1 << layer)) == 0)
+      if (option->type != REMINDER)
         continue;
 
-      if (option->type != REMINDER)
+      // is this option in this layer ?
+      if ((option->layer & (1 << layer)) == 0)
         continue;
 
       wchar_t* fmt = option->required ? L"<%s>" : L"[<%s>] ";
@@ -317,11 +340,22 @@ void argShowUsage(wchar_t* programName, ARGExpectedOption* expectedOptions, unsi
   }
 
   fwprintf(stdout, L"\n\nOptions\n");
-  for(int i = 0; i < numExpectedOptions; i++)
+  for (int i = 0; i < numExpectedOptions; i++)
   {
     ARGExpectedOption* option = &expectedOptions[i];
     int numSpaces = -30 + wcslen(option->name);
     wprintf(L"  %s %*s = %s\n", option->name, numSpaces, option->valueName, option->help);
   }
+}
+
+void argFreeCmdLine(ARGCmdLine *cmdLine)
+{
+  for (int i = 0; i < cmdLine->numOptions; i++)
+  {
+    int numValues = cmdLine->options[i].numValues;
+    free(cmdLine->options[i].values);
+  }
+
+  free(cmdLine->options);
 }
 

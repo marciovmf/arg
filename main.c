@@ -8,13 +8,14 @@
 
 int wmain(int argc, wchar_t **argv)
 {
-  ARGExpectedOption optionA = { L"-a", L"param", L"Specify zero or one integer value", INTEGER, 1, 1, true, LAYER_0 };
-  ARGExpectedOption optionB = { L"-b", L"", L"Specify a flag with no arguments", BOOL, 0, 0, false, LAYER_0 };
-  ARGExpectedOption optionC = { L"-c", L"param", L"Specify a list of one or more strings",  STRING, 1, -1, false, LAYER_0};
-  ARGExpectedOption optionHelp = { L"-h", L"param", L"Displays this help.", STRING, 0, 0, true, LAYER_1 };
-  ARGExpectedOption optionReminder0 = { L"Input files", L"param", L"A list of files to process", REMINDER, 0, 0, false, LAYER_0};
+  ARGExpectedOption optionA = { L"-a", L"number", L"Specify zero or one integer value", INTEGER, 1, 1, true, ARG_LAYER_0, ARG_ONCE };
+  ARGExpectedOption optionB = { L"-b", L"", L"Specify a flag with no arguments", BOOL, 0, 0, true, ARG_LAYER_0, ARG_ONCE };
+  ARGExpectedOption optionD = { L"-f", L"float-number", L"Specify a float value", FLOAT, 1, 1, false, ARG_LAYER_0, ARG_ONCE };
+  ARGExpectedOption optionC = { L"-c", L"param", L"Specify a list of one or more strings",  STRING, 1, -1, false, ARG_LAYER_0, ARG_MULTIPLE};
+  ARGExpectedOption optionHelp = { L"-h", L"param", L"Displays this help.", STRING, 0, 0, true, ARG_LAYER_1, ARG_ONCE };
+  ARGExpectedOption optionReminder0 = { L"Input files", L"param", L"A list of files to process", REMINDER, 0, 0, false, ARG_LAYER_0, ARG_ONCE};
 
-  ARGExpectedOption options[] = { optionA, optionB, optionC, optionHelp, optionReminder0};
+  ARGExpectedOption options[] = { optionA, optionB, optionC, optionD, optionHelp, optionReminder0};
   int numOptions = sizeof(options) / sizeof(options[0]);
   ARGCmdLine cmdLine = argParseCmdLine(argc, argv, options, numOptions);
 
@@ -58,9 +59,10 @@ int wmain(int argc, wchar_t **argv)
       }
     }
 
-    for (int i = cmdLine.reminderArgi; i < argc; i++)
+    wchar_t** reminders = cmdLine.argv + cmdLine.reminderArgi;
+    for (int i = 0; i < cmdLine.numReminders; i++)
     {
-      wprintf(L"Reminder %d = %s\n", i, argv[i]);
+      wprintf(L"Reminder %d = %s\n",i, reminders[i]);
     }
   }
   else
