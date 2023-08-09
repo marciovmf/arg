@@ -32,6 +32,9 @@ static wchar_t* argGetTypeName(ARGType type)
 
 static bool argParseValue(ARGCmdLine* cmdLine, ARGOption* option, ARGExpectedOption* expected)
 {
+  if (cmdLine->argi >= cmdLine->argc)
+    return false;
+
   ARGValue value;
   wchar_t *endptr;
   wchar_t *valueString = cmdLine->argv[cmdLine->argi];
@@ -138,11 +141,13 @@ static void argParseOption(ARGCmdLine* cmdLine, ARGExpectedOption* expectedOptio
   cmdLine->argi++;
 
   // minimum argument count
-  while (expected->numValuesMin < option->numValues)
+  while (option->numValues < expected->numValuesMin)
   {
-    if (! argParseValue(cmdLine, option, expected))
+    bool noMoreArgs = (cmdLine->argi >= cmdLine->argc);
+    if (noMoreArgs || ! argParseValue(cmdLine, option, expected))
     {
-      fwprintf(stderr, L"Option '%s' requries at least %d arguments.", option->name, expected->numValuesMin);
+      fwprintf(stderr, L"Option '%s' requries at least %d arguments.\n", option->name, expected->numValuesMin);
+      cmdLine->valid = false;
       return;
     }
   }
@@ -190,14 +195,63 @@ ARGCmdLine argParseCmdLine(int argc, wchar_t **argv, ARGExpectedOption* expected
   cmdLine.argc = argc;
   cmdLine.argv = argv;
   cmdLine.argi = 1; // we skip program name
+  ARGLayer usedLayer = -1;
 
   do
   {
+    // Parse the option and it's arguments
     argParseOption(&cmdLine, expectedOptions, numExpectedOptions);
-  } while (cmdLine.argi < cmdLine.argc && cmdLine.valid);
 
-  // TODO(marcio): validate if mandatory targets were provided
-  // TODO(marcio): validate if used commands from conflicting layers
+    // check if the layer of the last option conflicts with previous layers
+    if (cmdLine.numOptions > 0 && cmdLine.valid)
+    {
+      ARGLayer cmdLayer = cmdLine.options[cmdLine.numOptions - 1].layer;
+      if (usedLayer == -1)
+        usedLayer = cmdLayer;
+      else
+      {
+        if ((usedLayer & cmdLayer) != cmdLayer)
+        {
+          for (int j = 0; j < cmdLine.numOptions - 1; j++)
+            fwprintf(stderr, L"Option '%s' can not be used along with '%s'\n",
+                cmdLine.options[cmdLine.numOptions - 1].name, cmdLine.options[j].name);
+
+          cmdLine.valid = false;
+          break;
+        }
+        usedLayer |= cmdLayer;
+      }
+    }
+
+    // check for missing required options for the layer used
+    if (cmdLine.valid && cmdLine.numOptions > 0)
+    {
+      for (int i = 0; i < numExpectedOptions; i++)
+      {
+        if (expectedOptions[i].required)
+        {
+          if ((expectedOptions[i].layer & usedLayer) != expectedOptions[i].layer)
+            continue;
+
+          bool found = false;
+          for (int j = 0; j < cmdLine.numOptions; j++)
+          {
+            if (wcscmp(expectedOptions[i].name, cmdLine.options[j].name) == 0)
+            {
+              found = true;
+              break;
+            }
+          }
+
+          if (!found)
+          {
+            fwprintf(stderr, L"Option '%s' is required but was not provided.\n", expectedOptions[i].name);
+          }
+        }
+      }
+    }
+
+  } while (cmdLine.argi < cmdLine.argc && cmdLine.valid);
 
   return cmdLine;
 }
